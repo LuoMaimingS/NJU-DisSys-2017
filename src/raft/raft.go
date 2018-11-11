@@ -33,15 +33,15 @@ import (
 type ServerState int
 
 const (
-	FOLLOWER = 0
+	FOLLOWER  = 0
 	CANDIDATE = 1
-	LEADER = 2
+	LEADER    = 2
 )
 
 const (
-	HeartbeatTime = time.Duration(50) * time.Millisecond
+	HeartbeatTime      = time.Duration(50) * time.Millisecond
 	ElectionTimeoutMin = 150
- 	ElectionTimeoutMax = 2 * ElectionTimeoutMin
+	ElectionTimeoutMax = 2 * ElectionTimeoutMin
 )
 
 //
@@ -87,7 +87,6 @@ type Raft struct {
 	nextIndex  []int
 	matchIndex []int
 	state      ServerState
-
 
 	electionTime *time.Timer
 
@@ -461,7 +460,7 @@ func (rf *Raft) leaderHandle() {
 	//heartBeatChan := make(chan int)
 
 	go func() {
-		for _ = range heartBeat.C {
+		for range heartBeat.C {
 			rf.heartBeatChan <- 1
 		}
 	}()
