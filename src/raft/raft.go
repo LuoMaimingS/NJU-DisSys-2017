@@ -333,14 +333,10 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	return
 }
 
-func getElectionTimeOut() time.Duration {
-	randNum := rand.Intn(int(ElectionTimeoutMax - ElectionTimeoutMin))
-	d := int(ElectionTimeoutMin) + randNum
-	return time.Duration(d) * time.Millisecond
-}
-
 func (rf *Raft) resetElectionTimeout() {
-	rf.electionTime.Reset(getElectionTimeOut())
+	randNum := rand.Intn(int(ElectionTimeoutMax - ElectionTimeoutMin))
+	i := int(ElectionTimeoutMin) + randNum
+	rf.electionTime.Reset(time.Duration(i) * time.Millisecond)
 }
 
 //For follower state
