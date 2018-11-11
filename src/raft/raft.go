@@ -549,17 +549,14 @@ func (rf *Raft) loopFunc() {
 
 	for {
 		switch state := rf.state; state {
-		case 0: //follower
+		case FOLLOWER: //follower
 			rf.followerHandle()
 			break
-		case 1: //candidate
+		case CANDIDATE: 
 			rf.candidateHandle()
 			break
-		case 2: //leader
+		case LEADER:
 			rf.leaderHandle()
-			break
-		default:
-			fmt.Println("func: loopFunc : The state is wrong")
 			break
 		}
 	}
