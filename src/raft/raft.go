@@ -30,10 +30,19 @@ import (
 // import "bytes"
 // import "encoding/gob"
 
-const BroadcastTime = time.Duration(50) * time.Millisecond
+type ServerState int
 
-const MinimumElectionTimeoutMS = 500
-const MaximumElectionTimeoutMS = 2 * MinimumElectionTimeoutMS
+const (
+	FOLLOWER = 0
+	CANDIDATE = 1
+	LEADER = 2
+)
+
+const (
+	HeartbeatTime = time.Duration(50) * time.Millisecond
+	ElectionTimeoutMin = 150
+ 	ElectionTimeoutMax = 2 * ElectionTimeoutMin
+)
 
 //
 // as each Raft peer becomes aware that successive log entries are
@@ -68,33 +77,24 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 
-	//Persistent state on all servers
 	currentTerm int
 	votedFor    int
 	log         []Entry
 
-	//Volatile State on all servers
 	commitIndex int
 	lastApplied int
-	//lastLogTerm int
 
-	//Volatile state on leaders
 	nextIndex  []int
 	matchIndex []int
-	state      int // state = 0 is follwer , state = 1 is candidate, state = 2 is leader
+	state      ServerState
 
-	//timer
+
 	electionTime *time.Timer
 
-	// when the server is candidate, but if it receive a AppendEntries RPC that
-	// term is up-to-date, the candidate should convert to follower
 	candiConvertToFollower chan int
 
-	// when the server is leader, but if it receive a AppendEntries RPC that
-	// term is up-to-date, the candidate should convert to follower
 	leaderConvertToFollower chan int
 
-	// heartbeat channel
 	heartBeatChan chan int
 
 	commitChan chan int
@@ -108,12 +108,7 @@ func (rf *Raft) GetState() (int, bool) {
 	var isleader bool
 	// Your code here.
 	term = rf.currentTerm
-
-	if rf.state == 2 {
-		isleader = true
-	} else {
-		isleader = false
-	}
+	isleader = rf.state == LEADER
 
 	return term, isleader
 }
@@ -220,21 +215,18 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	reply.Term = rf.currentTerm
-	// if rf is a leader, and haven't been convert to follower, it should deny
-	if rf.state == 2 && !converFollower {
+	if rf.state == LEADER && !converFollower {
 		reply.VoteGranted = false
 		return
 	}
 
-	if converFollower && rf.state == 1 {
+	if converFollower && rf.state == CANDIDATE {
 		rf.candiConvertToFollower <- 1
 	}
-	if converFollower && rf.state == 2 {
-		//fmt.Println("Convert to follower vote")
+	if converFollower && rf.state == LEADER {
 		rf.leaderConvertToFollower <- 1
 	}
 
-	//the candidate server is not at least as up-to-date as receriver's log or the server is a leader
 	if (args.LastLogTerm < rf.log[len(rf.log)-1].Term) ||
 		((args.LastLogTerm == rf.log[len(rf.log)-1].Term) && args.LastLogIndex < rf.log[len(rf.log)-1].Index) {
 		reply.VoteGranted = false
@@ -267,18 +259,18 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 	}
 
 	//if the rf.state == candidate, then let it returns to a follower state
-	if rf.state == 1 && args.LeaderId != rf.me && args.Term > rf.currentTerm {
+	if rf.state == CANDIDATE && args.LeaderId != rf.me && args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.votedFor = -1
-		rf.state = 0
+		rf.state = FOLLOWER
 		rf.candiConvertToFollower <- 1
 		rf.persist()
 	}
 
-	if rf.state == 2 && args.LeaderId != rf.me && args.Term > rf.currentTerm {
+	if rf.state == LEADER && args.LeaderId != rf.me && args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.votedFor = -1
-		rf.state = 0
+		rf.state = FOLLOWER
 		rf.leaderConvertToFollower <- 1
 		rf.persist()
 	}
@@ -342,8 +334,8 @@ func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply)
 }
 
 func getElectionTimeOut() time.Duration {
-	randNum := rand.Intn(int(MaximumElectionTimeoutMS - MinimumElectionTimeoutMS))
-	d := int(MinimumElectionTimeoutMS) + randNum
+	randNum := rand.Intn(int(ElectionTimeoutMax - ElectionTimeoutMin))
+	d := int(ElectionTimeoutMin) + randNum
 	return time.Duration(d) * time.Millisecond
 }
 
@@ -357,8 +349,7 @@ func (rf *Raft) followerHandle() {
 		select {
 		case <-rf.electionTime.C:
 			rf.currentTerm++
-			//fmt.Println("Current server %d, current term %d", rf.me, rf.currentTerm)
-			rf.state = 1
+			rf.state = CANDIDATE
 			rf.votedFor = -1
 			rf.resetElectionTimeout()
 			rf.persist()
@@ -403,7 +394,7 @@ func (rf *Raft) candidateHandle() {
 			reply := <-replyChan
 			if reply.Term > rf.currentTerm {
 				rf.currentTerm = reply.Term
-				rf.state = 0
+				rf.state = FOLLOWER
 				rf.votedFor = -1
 				rf.persist()
 				rf.candiConvertToFollower <- 1
@@ -425,7 +416,7 @@ func (rf *Raft) candidateHandle() {
 
 	case <-successLeader: //become the leader
 		rf.mu.Lock()
-		rf.state = 2 // change state to the leader
+		rf.state = LEADER
 		rf.votedFor = -1
 		rf.persist()
 		rf.nextIndex = make([]int, len(rf.peers))
@@ -437,7 +428,6 @@ func (rf *Raft) candidateHandle() {
 
 		rf.mu.Unlock()
 
-		//fmt.Println("Become leader", rf.me)
 		return
 	case <-rf.electionTime.C:
 		rf.resetElectionTimeout()
@@ -446,7 +436,7 @@ func (rf *Raft) candidateHandle() {
 		rf.persist()
 		return
 	case <-rf.candiConvertToFollower:
-		rf.state = 0 //change state to the follower
+		rf.state = FOLLOWER //change state to the follower
 		//rf.persist()
 		return
 	}
@@ -470,7 +460,7 @@ func (rf *Raft) leaderHandle() {
 	//end initialization
 
 	//Timer heartbeat
-	heartBeat := time.NewTicker(BroadcastTime)
+	heartBeat := time.NewTicker(HeartbeatTime)
 	defer heartBeat.Stop()
 	//heartBeatChan := make(chan int)
 
@@ -551,7 +541,7 @@ func (rf *Raft) leaderHandle() {
 			}
 
 		case <-rf.leaderConvertToFollower:
-			rf.state = 0
+			rf.state = FOLLOWER
 			rf.votedFor = -1
 			rf.persist()
 			return
@@ -621,7 +611,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := -1
 	term := rf.currentTerm
 	isLeader := false
-	if rf.state != 2 {
+	if rf.state != LEADER {
 		return index, term, isLeader
 	}
 
@@ -673,16 +663,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here.
-
-	// initialize the state
-	rf.state = 0
+	rf.state = FOLLOWER
 
 	rf.commitIndex = 0
 	rf.lastApplied = 0
 	rf.nextIndex = []int{}
 	rf.matchIndex = []int{}
 
-	rf.electionTime = time.NewTimer(2 * MinimumElectionTimeoutMS * time.Millisecond)
+	rf.electionTime = time.NewTimer(2 * ElectionTimeoutMin * time.Millisecond)
 
 	rf.candiConvertToFollower = make(chan int)
 	rf.leaderConvertToFollower = make(chan int)
@@ -692,9 +680,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	rf.resetElectionTimeout()
 	rf.log = append(rf.log, Entry{Term: 0})
-	rf.readPersist(persister.ReadRaftState())
 
-	//fmt.Printf("server %d: log %v\n", rf.me, rf.log)
+	// initialize the state
+	rf.readPersist(persister.ReadRaftState())
 
 	// end initialize the state
 
@@ -703,11 +691,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 			select {
 			case <-rf.commitChan:
 				commitIndex := rf.commitIndex
-				//baseIndex := rf.log[0].Index
 				for i := rf.lastApplied + 1; i <= commitIndex && i < len(rf.log); i++ {
 					msg := ApplyMsg{Index: i, Command: rf.log[i].Command}
 					applyCh <- msg
-					//fmt.Printf("me:%d %v %d\n", rf.me, msg, rf.state)
 					rf.lastApplied = i
 
 				}
