@@ -21,7 +21,6 @@ import "sync"
 import (
 	"bytes"
 	"encoding/gob"
-	"fmt"
 	"labrpc"
 	"math/rand"
 	"time"
@@ -173,7 +172,7 @@ type RequestVoteReply struct {
 }
 
 //AppendEntries RPC arguments structure
-type AppendEntriesArgs struct {
+type AppendEntryArgs struct {
 	Term         int
 	LeaderId     int
 	PervLogIndex int
@@ -183,7 +182,7 @@ type AppendEntriesArgs struct {
 }
 
 //AppendEntries RPC reply structure
-type AppendEntriesReply struct {
+type AppendEntryReply struct {
 	Term      int
 	Success   bool
 	NextIndex int
@@ -244,7 +243,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 * Just implement the heatbeat function...
 * To be done: the whole function
  */
-func (rf *Raft) AppendEntries(args AppendEntriesArgs, reply *AppendEntriesReply) {
+func (rf *Raft) AppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
 
 	rf.mu.Lock()
 	reply.Success = false
@@ -494,9 +493,9 @@ func (rf *Raft) leaderHandle() {
 
 			for i := 0; i < peersNum; i++ {
 				if i != rf.me {
-					var reply *AppendEntriesReply
+					var reply *AppendEntryReply
 					//var entries	[]Entry
-					var args AppendEntriesArgs
+					var args AppendEntryArgs
 					args.Term = rf.currentTerm
 					args.LeaderId = rf.me
 					args.PervLogIndex = rf.nextIndex[i] - 1
@@ -509,7 +508,7 @@ func (rf *Raft) leaderHandle() {
 						args.Entries = make([]LogEntry, len(rf.logs[args.PervLogIndex+1:]))
 						copy(args.Entries, rf.logs[args.PervLogIndex+1:])
 					}
-					go func(i int, args AppendEntriesArgs) {
+					go func(i int, args AppendEntryArgs) {
 						ok := rf.peers[i].Call("Raft.AppendEntries", args, &reply)
 						if ok {
 							//if reply.Term > rf.currentTerm{
@@ -552,7 +551,7 @@ func (rf *Raft) loopFunc() {
 		case FOLLOWER: //follower
 			rf.followerHandle()
 			break
-		case CANDIDATE: 
+		case CANDIDATE:
 			rf.candidateHandle()
 			break
 		case LEADER:
