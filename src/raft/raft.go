@@ -196,41 +196,44 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
-	converFollower := false
-	reply.VoteGranted = false
-
+	
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
+		reply.VoteGranted = false
 		return
 	}
+
+	var toFollower = (args.Term > rf.currentTerm)
 
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.votedFor = -1
 		rf.persist()
-		converFollower = true
 	}
 
 	reply.Term = rf.currentTerm
-	if rf.state == LEADER && !converFollower {
-		reply.VoteGranted = false
-		return
+	reply.VoteGranted = false
+
+	switch rf.state {
+		case LEADER:
+			if toFollower {
+				rf.leaderToFollower <- 1
+			} else {
+				return
+			}
+			break
+		case CANDIDATE:
+			if toFollower {
+				rf.candidateToFollower <- 1
+			}
+			break
+
 	}
 
-	if converFollower && rf.state == CANDIDATE {
-		rf.candidateToFollower <- 1
-	}
-	if converFollower && rf.state == LEADER {
-		rf.leaderToFollower <- 1
-	}
-
-	if (args.LastLogTerm < rf.logs[len(rf.logs)-1].Term) ||
-		((args.LastLogTerm == rf.logs[len(rf.logs)-1].Term) && args.LastLogIndex < rf.logs[len(rf.logs)-1].Index) {
-		reply.VoteGranted = false
+	lastLog := rf.getLogEntry(len(rf.logs) - 1)
+	if (args.LastLogTerm < lastLog.Term) || args.LastLogTerm == lastLog.Term && args.LastLogIndex < lastLog.Index {
 		rf.persist()
 	} else if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
-		//vote to the candidateId
 		rf.votedFor = args.CandidateId
 		reply.VoteGranted = true
 		rf.persist()
@@ -238,10 +241,16 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	}
 }
 
+/**
+* Get log Entry by index.
+*/
+
+func (rf *Raft) getLogEntry(index int) LogEntry {
+	return rf.logs[index]
+}
+
 /*
 * AppendEntries RPC handler.
-* Just implement the heatbeat function...
-* To be done: the whole function
  */
 func (rf *Raft) AppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
 
