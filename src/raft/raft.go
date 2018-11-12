@@ -350,7 +350,7 @@ func (rf *Raft) handleTimeout() {
 * Handle follower
 */
 
-func (rf *Raft) followerHandle() {
+func (rf *Raft) handleFollower() {
 	for {
 		select {
 			case <-rf.electionTimer.C:
@@ -368,7 +368,7 @@ func (rf *Raft) followerHandle() {
 /*
 * Handle candidate
 */
-func (rf *Raft) candidateHandle() {
+func (rf *Raft) handleCandidate() {
 	// Vote to self
 	rf.votedFor = rf.me
 	rf.persist()
@@ -448,7 +448,7 @@ func (rf *Raft) initRaftIndex() {
 /*
 * Handle candidate
 */
-func (rf *Raft) leaderHandle() {
+func (rf *Raft) handleLeader() {
 
 	rf.initRaftIndex()
 
@@ -569,13 +569,13 @@ func (rf *Raft) launch(applyCh chan ApplyMsg) {
 		for {
 			switch rf.state {
 				case FOLLOWER: 
-					rf.followerHandle()
+					rf.handleFollower()
 					break
 				case CANDIDATE:
-					rf.candidateHandle()
+					rf.handleCandidate()
 					break
 				case LEADER:
-					rf.leaderHandle()
+					rf.handleLeader()
 					break
 			}
 		}
