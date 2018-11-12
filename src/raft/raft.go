@@ -548,21 +548,38 @@ func (rf *Raft) broadcastAppendEntries() {
 	}
 }
 
-func (rf *Raft) loopFunc() {
+func (rf *Raft) launch(applyCh chan ApplyMsg) {
 
-	for {
-		switch state := rf.state; state {
-		case FOLLOWER: //follower
-			rf.followerHandle()
-			break
-		case CANDIDATE:
-			rf.candidateHandle()
-			break
-		case LEADER:
-			rf.leaderHandle()
-			break
+	go func() {
+		for {
+			select {
+				case <-rf.commit:
+					commitIndex := rf.commitIndex
+					for i := rf.lastApplied + 1; i <= commitIndex && i < len(rf.logs); i++ {
+						msg := ApplyMsg{Index: i, Command: rf.logs[i].Command}
+						applyCh <- msg
+						rf.lastApplied = i
+
+					}
+			}
 		}
-	}
+	}()
+
+	go func() {
+		for {
+			switch rf.state {
+				case FOLLOWER: 
+					rf.followerHandle()
+					break
+				case CANDIDATE:
+					rf.candidateHandle()
+					break
+				case LEADER:
+					rf.leaderHandle()
+					break
+			}
+		}
+	}()
 }
 
 //
@@ -686,21 +703,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// end initialize the state
 
-	go func() {
-		for {
-			select {
-			case <-rf.commit:
-				commitIndex := rf.commitIndex
-				for i := rf.lastApplied + 1; i <= commitIndex && i < len(rf.logs); i++ {
-					msg := ApplyMsg{Index: i, Command: rf.logs[i].Command}
-					applyCh <- msg
-					rf.lastApplied = i
 
-				}
-			}
-		}
-	}()
-	go rf.loopFunc()
+	rf.launch(applyCh)
 
 	// initialize from state persisted before a crash
 	//rf.readPersist(persister.ReadRaftState())
