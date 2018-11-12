@@ -338,22 +338,20 @@ func (rf *Raft) AppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
 		rf.commit <- 1
 
 	}
-
-	return
 }
 
 func (rf *Raft) handleTimeout() {
-	randNum := rand.Intn(int(ElectionTimeoutMax - ElectionTimeoutMin))
-	i := int(ElectionTimeoutMin) + randNum
+	num := rand.Intn(int(ElectionTimeoutMax - ElectionTimeoutMin))
+	i := int(ElectionTimeoutMin) + num
 	rf.electionTimer.Reset(time.Duration(i) * time.Millisecond)
 }
 
 //For follower state
 func (rf *Raft) followerHandle() {
-	for {
+	for true {
 		select {
 			case <-rf.electionTimer.C:
-				rf.currentTerm++
+				rf.currentTerm += 1
 				rf.state = CANDIDATE
 				rf.votedFor = -1
 				rf.handleTimeout()
