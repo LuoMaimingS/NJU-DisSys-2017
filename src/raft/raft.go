@@ -346,7 +346,10 @@ func (rf *Raft) handleTimeout() {
 	rf.electionTimer.Reset(time.Duration(i) * time.Millisecond)
 }
 
-//For follower state
+/*
+* Handle follower
+*/
+
 func (rf *Raft) followerHandle() {
 	for true {
 		select {
@@ -362,86 +365,68 @@ func (rf *Raft) followerHandle() {
 
 }
 
-//For candidate state
+/*
+* Handle candidate
+*/
 func (rf *Raft) candidateHandle() {
-	//set its vote to itself
+	// Vote to self
 	rf.votedFor = rf.me
 	rf.persist()
 
-	votedNum := 1
+	grantedVoteCount := 1
 
-	successLeader := make(chan int)
-	serverNum := len(rf.peers)
-	requestVoteargs := RequestVoteArgs{rf.currentTerm, rf.me, rf.logs[len(rf.logs)-1].Index, rf.logs[len(rf.logs)-1].Term}
-	//var reply *RequestVoteReply
-	go func() {
-		replyChan := make(chan *RequestVoteReply, 10)
-		//var reply *RequestVoteReply
-		for i := 0; i < serverNum; i++ {
-			if i != rf.me {
-				// go 并发访问requestVote
-				go func(i int) {
-					var rep *RequestVoteReply
-					ok := rf.peers[i].Call("Raft.RequestVote", requestVoteargs, &rep)
-					if ok {
-						//将返回的结果传到reply channel中
-						replyChan <- rep
+	becomeLeader := make(chan int)
+	args := RequestVoteArgs{rf.currentTerm, rf.me, rf.logs[len(rf.logs)-1].Index, rf.logs[len(rf.logs)-1].Term}
+	for server := 0; server < len(rf.peers); server++ {
+		if rf.me == server {
+			continue
+		}
+
+		go func(s int, args RequestVoteArgs) {
+			var reply RequestVoteReply
+			ok := rf.sendRequestVote(s, args, &reply)
+			if ok {
+				if reply.Term > rf.currentTerm {
+					rf.currentTerm = reply.Term
+					rf.state = FOLLOWER
+					rf.votedFor = -1
+					rf.persist()
+					rf.candidateToFollower <- 1
+				} else if reply.VoteGranted {
+					grantedVoteCount++
+					if grantedVoteCount >= len(rf.peers) / 2 + 1 {
+						becomeLeader <- 1
 					}
-					return
-				}(i)
-
-			}
-		} //end for i:=0
-
-		for {
-			reply := <-replyChan
-			if reply.Term > rf.currentTerm {
-				rf.currentTerm = reply.Term
-				rf.state = FOLLOWER
-				rf.votedFor = -1
-				rf.persist()
-				rf.candidateToFollower <- 1
-				return
-			}
-			if reply.VoteGranted {
-				votedNum += 1
-				if votedNum > serverNum/2 {
-					successLeader <- 1
-					return
 				}
 			}
+		}(server, args)
 
-		}
-
-	}() //end go func
+	} 
 
 	select {
+		case <-becomeLeader: 
+			rf.mu.Lock()
+			rf.state = LEADER
+			rf.votedFor = -1
+			rf.persist()
+			rf.nextIndex = make([]int, len(rf.peers))
+			rf.matchIndex = make([]int, len(rf.peers))
+			for i := range rf.peers {
+				rf.nextIndex[i] = rf.logs[len(rf.logs)-1].Index + 1
+				rf.matchIndex[i] = 0
+			}
 
-	case <-successLeader: //become the leader
-		rf.mu.Lock()
-		rf.state = LEADER
-		rf.votedFor = -1
-		rf.persist()
-		rf.nextIndex = make([]int, len(rf.peers))
-		rf.matchIndex = make([]int, len(rf.peers))
-		for i := range rf.peers {
-			rf.nextIndex[i] = rf.logs[len(rf.logs)-1].Index + 1
-			rf.matchIndex[i] = 0
-		}
-
-		rf.mu.Unlock()
-
-		return
-	case <-rf.electionTimer.C:
-		rf.handleTimeout()
-		rf.currentTerm++
-		rf.votedFor = -1
-		rf.persist()
-		return
-	case <-rf.candidateToFollower:
-		rf.state = FOLLOWER //change state to the follower
-		//rf.persist()
-		return
+			rf.mu.Unlock()
+			return
+		case <-rf.electionTimer.C:
+			rf.handleTimeout()
+			rf.currentTerm += 1
+			rf.votedFor = -1
+			rf.persist()
+			return
+		case <-rf.candidateToFollower:
+			rf.state = FOLLOWER 
+			return
 	}
 
 }
