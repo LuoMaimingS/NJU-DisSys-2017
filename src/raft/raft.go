@@ -196,7 +196,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	
+
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
@@ -215,18 +215,18 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 	reply.VoteGranted = false
 
 	switch rf.state {
-		case LEADER:
-			if toFollower {
-				rf.leaderToFollower <- 1
-			} else {
-				return
-			}
-			break
-		case CANDIDATE:
-			if toFollower {
-				rf.candidateToFollower <- 1
-			}
-			break
+	case LEADER:
+		if toFollower {
+			rf.leaderToFollower <- 1
+		} else {
+			return
+		}
+		break
+	case CANDIDATE:
+		if toFollower {
+			rf.candidateToFollower <- 1
+		}
+		break
 
 	}
 
@@ -243,7 +243,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 
 /**
 * Get log Entry by index.
-*/
+ */
 
 func (rf *Raft) getLogEntry(index int) LogEntry {
 	return rf.logs[index]
@@ -258,7 +258,6 @@ func (rf *Raft) AppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
 	reply.Success = false
 	defer rf.mu.Unlock()
 
-	
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.NextIndex = rf.logs[len(rf.logs)-1].Index + 1
@@ -267,27 +266,27 @@ func (rf *Raft) AppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
 
 	var toFollower = (args.LeaderId != rf.me && args.Term > rf.currentTerm)
 	switch rf.state {
-		case FOLLOWER: break
-		case CANDIDATE:
-			if toFollower {
-				rf.currentTerm = args.Term
-				rf.votedFor = -1
-				rf.state = FOLLOWER
-				rf.candidateToFollower <- 1
-				rf.persist()
-			}
-			break
-		case LEADER:
-			if toFollower {
-				rf.currentTerm = args.Term
-				rf.votedFor = -1
-				rf.state = FOLLOWER
-				rf.leaderToFollower <- 1
-				rf.persist()
-			}
-			break
+	case FOLLOWER:
+		break
+	case CANDIDATE:
+		if toFollower {
+			rf.currentTerm = args.Term
+			rf.votedFor = -1
+			rf.state = FOLLOWER
+			rf.candidateToFollower <- 1
+			rf.persist()
+		}
+		break
+	case LEADER:
+		if toFollower {
+			rf.currentTerm = args.Term
+			rf.votedFor = -1
+			rf.state = FOLLOWER
+			rf.leaderToFollower <- 1
+			rf.persist()
+		}
+		break
 	}
-
 
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
@@ -298,7 +297,6 @@ func (rf *Raft) AppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
 	rf.handleTimeout()
 
 	reply.Term = rf.currentTerm
-
 
 	lastLogEntry := rf.getLogEntry(len(rf.logs) - 1)
 
@@ -311,8 +309,8 @@ func (rf *Raft) AppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
 	logEntry := rf.getLogEntry(args.PervLogIndex - firstLogEntry.Index)
 
 	if args.PervLogIndex > firstLogEntry.Index && args.PrevLogTerm != logEntry.Term {
-		for i := firstLogEntry.Index; i <= args.PervLogIndex - 1; i++ {
-			if rf.logs[i - firstLogEntry.Index].Term != logEntry.Term {
+		for i := firstLogEntry.Index; i <= args.PervLogIndex-1; i++ {
+			if rf.logs[i-firstLogEntry.Index].Term != logEntry.Term {
 				reply.NextIndex = i + 1
 				break
 			}
@@ -321,7 +319,7 @@ func (rf *Raft) AppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
 	}
 
 	if args.PervLogIndex >= firstLogEntry.Index {
-		rf.logs = rf.logs[:args.PervLogIndex + 1 - firstLogEntry.Index]
+		rf.logs = rf.logs[:args.PervLogIndex+1-firstLogEntry.Index]
 		rf.logs = append(rf.logs, args.Entries...)
 		rf.persist()
 		reply.Success = true
@@ -329,7 +327,7 @@ func (rf *Raft) AppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
 	}
 
 	if args.LeaderCommit > rf.commitIndex {
-		last := rf.getLogEntry(len(rf.logs)-1)
+		last := rf.getLogEntry(len(rf.logs) - 1)
 		if args.LeaderCommit > last.Index {
 			rf.commitIndex = last.Index
 		} else {
@@ -348,18 +346,18 @@ func (rf *Raft) handleTimeout() {
 
 /*
 * Handle follower
-*/
+ */
 
 func (rf *Raft) handleFollower() {
 	for {
 		select {
-			case <-rf.electionTimer.C:
-				rf.currentTerm += 1
-				rf.state = CANDIDATE
-				rf.votedFor = -1
-				rf.handleTimeout()
-				rf.persist()
-				return
+		case <-rf.electionTimer.C:
+			rf.currentTerm += 1
+			rf.state = CANDIDATE
+			rf.votedFor = -1
+			rf.handleTimeout()
+			rf.persist()
+			return
 		}
 	}
 
@@ -367,7 +365,7 @@ func (rf *Raft) handleFollower() {
 
 /*
 * Handle candidate
-*/
+ */
 func (rf *Raft) handleCandidate() {
 	// Vote to self
 	rf.votedFor = rf.me
@@ -394,39 +392,39 @@ func (rf *Raft) handleCandidate() {
 					rf.candidateToFollower <- 1
 				} else if reply.VoteGranted {
 					grantedVoteCount++
-					if grantedVoteCount >= len(rf.peers) / 2 + 1 {
+					if grantedVoteCount >= len(rf.peers)/2+1 {
 						becomeLeader <- 1
 					}
 				}
 			}
 		}(server, args)
 
-	} 
+	}
 
 	select {
-		case <-becomeLeader: 
-			rf.mu.Lock()
-			rf.state = LEADER
-			rf.votedFor = -1
-			rf.persist()
-			rf.nextIndex = make([]int, len(rf.peers))
-			rf.matchIndex = make([]int, len(rf.peers))
-			for i := range rf.peers {
-				rf.nextIndex[i] = rf.logs[len(rf.logs)-1].Index + 1
-				rf.matchIndex[i] = 0
-			}
+	case <-becomeLeader:
+		rf.mu.Lock()
+		rf.state = LEADER
+		rf.votedFor = -1
+		rf.persist()
+		rf.nextIndex = make([]int, len(rf.peers))
+		rf.matchIndex = make([]int, len(rf.peers))
+		for i := range rf.peers {
+			rf.nextIndex[i] = rf.logs[len(rf.logs)-1].Index + 1
+			rf.matchIndex[i] = 0
+		}
 
-			rf.mu.Unlock()
-			return
-		case <-rf.electionTimer.C:
-			rf.handleTimeout()
-			rf.currentTerm += 1
-			rf.votedFor = -1
-			rf.persist()
-			return
-		case <-rf.candidateToFollower:
-			rf.state = FOLLOWER 
-			return
+		rf.mu.Unlock()
+		return
+	case <-rf.electionTimer.C:
+		rf.handleTimeout()
+		rf.currentTerm += 1
+		rf.votedFor = -1
+		rf.persist()
+		return
+	case <-rf.candidateToFollower:
+		rf.state = FOLLOWER
+		return
 	}
 
 }
@@ -447,7 +445,7 @@ func (rf *Raft) initRaftIndex() {
 
 /*
 * Handle candidate
-*/
+ */
 func (rf *Raft) handleLeader() {
 
 	rf.initRaftIndex()
@@ -462,42 +460,41 @@ func (rf *Raft) handleLeader() {
 		}
 	}()
 
-
 	for {
 		select {
-			case <-rf.leaderToFollower:
-				rf.state = FOLLOWER
-				rf.votedFor = -1
-				rf.persist()
-				return
+		case <-rf.leaderToFollower:
+			rf.state = FOLLOWER
+			rf.votedFor = -1
+			rf.persist()
+			return
 
-			case <-rf.heartbeat:
-				commitIndex := rf.commitIndex
-				baseIndex := rf.logs[0].Index
-				lastIndex := rf.logs[len(rf.logs) - 1].Index
-				for i := rf.commitIndex + 1; i <= lastIndex; i++ {
-					count := 1
-					for j := 0; j < len(rf.peers); j++ {
-						if j == rf.me {
-							continue
-						}
-
-						if rf.matchIndex[j] >= i && rf.logs[i - baseIndex].Term == rf.currentTerm {
-							count++
-						}
+		case <-rf.heartbeat:
+			commitIndex := rf.commitIndex
+			baseIndex := rf.logs[0].Index
+			lastIndex := rf.logs[len(rf.logs)-1].Index
+			for i := rf.commitIndex + 1; i <= lastIndex; i++ {
+				count := 1
+				for j := 0; j < len(rf.peers); j++ {
+					if j == rf.me {
+						continue
 					}
-					if len(rf.peers) < 2 * count {
-						commitIndex = i
+
+					if rf.matchIndex[j] >= i && rf.logs[i-baseIndex].Term == rf.currentTerm {
+						count++
 					}
 				}
-
-				if commitIndex != rf.commitIndex {
-					rf.commitIndex = commitIndex
-					rf.commit <- 1
-
+				if len(rf.peers) < 2*count {
+					commitIndex = i
 				}
+			}
 
-				rf.broadcastAppendEntries()
+			if commitIndex != rf.commitIndex {
+				rf.commitIndex = commitIndex
+				rf.commit <- 1
+
+			}
+
+			rf.broadcastAppendEntries()
 		}
 	}
 
@@ -510,21 +507,21 @@ func (rf *Raft) broadcastAppendEntries() {
 		}
 
 		prervLogIndex := rf.nextIndex[i] - 1
-		if prervLogIndex > len(rf.logs) - 1 {
+		if prervLogIndex > len(rf.logs)-1 {
 			prervLogIndex = len(rf.logs) - 1
 		}
-		args := AppendEntryArgs {
-			Term:			rf.currentTerm,
-			LeaderId:		rf.me,
-			PervLogIndex:	prervLogIndex,
-			PrevLogTerm:	rf.logs[prervLogIndex].Term,
-			LeaderCommit:	rf.commitIndex,
+		args := AppendEntryArgs{
+			Term:         rf.currentTerm,
+			LeaderId:     rf.me,
+			PervLogIndex: prervLogIndex,
+			PrevLogTerm:  rf.logs[prervLogIndex].Term,
+			LeaderCommit: rf.commitIndex,
 		}
 
 		baseIndex := rf.logs[0].Index
 		if rf.nextIndex[i] > baseIndex {
-			args.Entries = make([]LogEntry, len(rf.logs[args.PervLogIndex + 1:]))
-			copy(args.Entries, rf.logs[args.PervLogIndex + 1:])
+			args.Entries = make([]LogEntry, len(rf.logs[args.PervLogIndex+1:]))
+			copy(args.Entries, rf.logs[args.PervLogIndex+1:])
 		}
 
 		var reply AppendEntryReply
@@ -535,7 +532,7 @@ func (rf *Raft) broadcastAppendEntries() {
 				if reply.Success {
 					if len(args.Entries) > 0 {
 						rf.mu.Lock()
-						rf.nextIndex[i] = args.Entries[len(args.Entries) - 1].Index + 1
+						rf.nextIndex[i] = args.Entries[len(args.Entries)-1].Index + 1
 						rf.matchIndex[i] = rf.nextIndex[i] - 1
 						rf.mu.Unlock()
 					}
@@ -553,14 +550,14 @@ func (rf *Raft) launch(applyCh chan ApplyMsg) {
 	go func() {
 		for {
 			select {
-				case <-rf.commit:
-					commitIndex := rf.commitIndex
-					for i := rf.lastApplied + 1; i <= commitIndex && i < len(rf.logs); i++ {
-						msg := ApplyMsg{Index: i, Command: rf.logs[i].Command}
-						applyCh <- msg
-						rf.lastApplied = i
+			case <-rf.commit:
+				commitIndex := rf.commitIndex
+				for i := rf.lastApplied + 1; i <= commitIndex && i < len(rf.logs); i++ {
+					msg := ApplyMsg{Index: i, Command: rf.logs[i].Command}
+					applyCh <- msg
+					rf.lastApplied = i
 
-					}
+				}
 			}
 		}
 	}()
@@ -568,15 +565,15 @@ func (rf *Raft) launch(applyCh chan ApplyMsg) {
 	go func() {
 		for {
 			switch rf.state {
-				case FOLLOWER: 
-					rf.handleFollower()
-					break
-				case CANDIDATE:
-					rf.handleCandidate()
-					break
-				case LEADER:
-					rf.handleLeader()
-					break
+			case FOLLOWER:
+				rf.handleFollower()
+				break
+			case CANDIDATE:
+				rf.handleCandidate()
+				break
+			case LEADER:
+				rf.handleLeader()
+				break
 			}
 		}
 	}()
@@ -702,7 +699,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.readPersist(persister.ReadRaftState())
 
 	// end initialize the state
-
 
 	rf.launch(applyCh)
 
