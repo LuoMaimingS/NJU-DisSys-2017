@@ -257,32 +257,38 @@ func (rf *Raft) AppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
 	rf.mu.Lock()
 	reply.Success = false
 	defer rf.mu.Unlock()
-	//defer rf.persist()
-	//if the request's term is older than rf.currentTerm
+
+	
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.NextIndex = rf.logs[len(rf.logs)-1].Index + 1
 		return
 	}
 
-	//if the rf.state == candidate, then let it returns to a follower state
-	if rf.state == CANDIDATE && args.LeaderId != rf.me && args.Term > rf.currentTerm {
-		rf.currentTerm = args.Term
-		rf.votedFor = -1
-		rf.state = FOLLOWER
-		rf.candidateToFollower <- 1
-		rf.persist()
+	var toFollower = (args.LeaderId != rf.me && args.Term > rf.currentTerm)
+	switch rf.state {
+		case FOLLOWER: break
+		case CANDIDATE:
+			if toFollower {
+				rf.currentTerm = args.Term
+				rf.votedFor = -1
+				rf.state = FOLLOWER
+				rf.candidateToFollower <- 1
+				rf.persist()
+			}
+			break
+		case LEADER:
+			if toFollower {
+				rf.currentTerm = args.Term
+				rf.votedFor = -1
+				rf.state = FOLLOWER
+				rf.leaderToFollower <- 1
+				rf.persist()
+			}
+			break
 	}
 
-	if rf.state == LEADER && args.LeaderId != rf.me && args.Term > rf.currentTerm {
-		rf.currentTerm = args.Term
-		rf.votedFor = -1
-		rf.state = FOLLOWER
-		rf.leaderToFollower <- 1
-		rf.persist()
-	}
 
-	//reset state
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.votedFor = -1
@@ -293,48 +299,44 @@ func (rf *Raft) AppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
 
 	reply.Term = rf.currentTerm
 
-	//term := rf.log[len(rf.log) - 1].Term
-	index := rf.logs[len(rf.logs)-1].Index
 
-	if args.PervLogIndex > index {
-		reply.NextIndex = index + 1
+	lastLogEntry := rf.getLogEntry(len(rf.logs) - 1)
+
+	if args.PervLogIndex > lastLogEntry.Index {
+		reply.NextIndex = lastLogEntry.Index + 1
 		return
 	}
 
-	indexZero := rf.logs[0].Index
+	firstLogEntry := rf.getLogEntry(0)
+	logEntry := rf.getLogEntry(args.PervLogIndex - firstLogEntry.Index)
 
-	if args.PervLogIndex > indexZero {
-		term := rf.logs[args.PervLogIndex-indexZero].Term
-		if args.PrevLogTerm != term {
-			for i := args.PervLogIndex - 1; i >= indexZero; i-- {
-				if rf.logs[i-indexZero].Term != term {
-					reply.NextIndex = i + 1
-					break
-				}
+	if args.PervLogIndex > firstLogEntry.Index && args.PrevLogTerm != logEntry.Term {
+		for i := firstLogEntry.Index; i <= args.PervLogIndex - 1; i++ {
+			if rf.logs[i - firstLogEntry.Index].Term != logEntry.Term {
+				reply.NextIndex = i + 1
+				break
 			}
-			return
 		}
+		return
 	}
 
-	if args.PervLogIndex >= indexZero {
-		rf.logs = rf.logs[:args.PervLogIndex+1-indexZero]
+	if args.PervLogIndex >= firstLogEntry.Index {
+		rf.logs = rf.logs[:args.PervLogIndex + 1 - firstLogEntry.Index]
 		rf.logs = append(rf.logs, args.Entries...)
 		rf.persist()
 		reply.Success = true
 		reply.NextIndex = rf.logs[len(rf.logs)-1].Index
-		//fmt.Println(rf.log)
 	}
 
 	if args.LeaderCommit > rf.commitIndex {
-		last := rf.logs[len(rf.logs)-1].Index
-		if args.LeaderCommit > last {
-			rf.commitIndex = last
+		last := rf.getLogEntry(len(rf.logs)-1)
+		if args.LeaderCommit > last.Index {
+			rf.commitIndex = last.Index
 		} else {
 			rf.commitIndex = args.LeaderCommit
 		}
-
 		rf.commit <- 1
-		//rf.persist()
+
 	}
 
 	return
@@ -350,13 +352,13 @@ func (rf *Raft) handleTimeout() {
 func (rf *Raft) followerHandle() {
 	for {
 		select {
-		case <-rf.electionTimer.C:
-			rf.currentTerm++
-			rf.state = CANDIDATE
-			rf.votedFor = -1
-			rf.handleTimeout()
-			rf.persist()
-			return
+			case <-rf.electionTimer.C:
+				rf.currentTerm++
+				rf.state = CANDIDATE
+				rf.votedFor = -1
+				rf.handleTimeout()
+				rf.persist()
+				return
 		}
 	}
 
