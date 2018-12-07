@@ -403,18 +403,7 @@ func (rf *Raft) handleCandidate() {
 
 	select {
 	case <-becomeLeader:
-		rf.mu.Lock()
-		rf.state = LEADER
-		rf.votedFor = -1
-		rf.persist()
-		rf.nextIndex = make([]int, len(rf.peers))
-		rf.matchIndex = make([]int, len(rf.peers))
-		for i := range rf.peers {
-			rf.nextIndex[i] = rf.logs[len(rf.logs)-1].Index + 1
-			rf.matchIndex[i] = 0
-		}
-
-		rf.mu.Unlock()
+		rf.doLeader()
 		return
 	case <-rf.electionTimer.C:
 		rf.handleTimeout()
@@ -425,6 +414,22 @@ func (rf *Raft) handleCandidate() {
 	case <-rf.candidateToFollower:
 		rf.state = FOLLOWER
 		return
+	}
+
+}
+
+func (rf *Raft) doLeader() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	rf.state = LEADER
+	rf.votedFor = -1
+	rf.persist()
+	rf.nextIndex = make([]int, len(rf.peers))
+	rf.matchIndex = make([]int, len(rf.peers))
+	for i := range rf.peers {
+		rf.nextIndex[i] = rf.logs[len(rf.logs)-1].Index + 1
+		rf.matchIndex[i] = 0
 	}
 
 }
