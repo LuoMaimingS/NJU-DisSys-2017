@@ -625,26 +625,18 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := -1
 	term := rf.currentTerm
 	isLeader := false
-	if rf.state != LEADER {
-		return index, term, isLeader
+	if rf.state == LEADER {
+		isLeader = true
+		index = rf.logs[len(rf.logs)-1].Index + 1
+		logEntry := LogEntry{
+			index,
+			term,
+			command,
+		}
+		rf.logs = append(rf.logs, logEntry)
+		rf.persist()
+		rf.heartbeat <- 1
 	}
-
-	isLeader = true
-	index = rf.logs[len(rf.logs)-1].Index + 1
-	//fmt.Println("Start\n")
-	logEntry := LogEntry{
-		index,
-		term,
-		command,
-	}
-	rf.logs = append(rf.logs, logEntry)
-	rf.persist()
-
-	// send the server heart beart channel to append log to other servers
-	rf.heartbeat <- 1
-
-	//fmt.Printf("me:%d %v, index:%d\n",rf.me,command, index)
-
 	return index, term, isLeader
 }
 
