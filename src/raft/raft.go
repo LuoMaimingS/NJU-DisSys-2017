@@ -38,8 +38,8 @@ const (
 )
 
 const (
-	HeartbeatTime      = time.Duration(50) * time.Millisecond
-	ElectionTimeoutMin = 150
+	HeartbeatTime      = time.Duration(100) * time.Millisecond
+	ElectionTimeoutMin = 300
 	ElectionTimeoutMax = 2 * ElectionTimeoutMin
 )
 
